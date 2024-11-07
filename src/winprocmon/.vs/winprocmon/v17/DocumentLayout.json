@@ -3,6 +3,10 @@
   "WorkspaceRootPath": "D:\\code\\vs2022\\winprocmon\\",
   "Documents": [
     {
+      "AbsoluteMoniker": "D:0:0:{F962833A-DF0C-41C9-9477-9F2F69DD0BBE}|winprocmon.vcxproj|D:\\code\\vs2022\\winprocmon\\winprocmon.rc||{177559E0-D141-11D0-92DF-00A0C9138C45}|,   b e g i n       0 ! $(  \u0022     ",
+      "RelativeMoniker": "D:0:0:{F962833A-DF0C-41C9-9477-9F2F69DD0BBE}|winprocmon.vcxproj|solutionrelative:winprocmon.rc||{177559E0-D141-11D0-92DF-00A0C9138C45}|,   b e g i n       0 ! $(  \u0022     "
+    },
+    {
       "AbsoluteMoniker": "D:0:0:{F962833A-DF0C-41C9-9477-9F2F69DD0BBE}|winprocmon.vcxproj|D:\\code\\vs2022\\winprocmon\\main.c||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
       "RelativeMoniker": "D:0:0:{F962833A-DF0C-41C9-9477-9F2F69DD0BBE}|winprocmon.vcxproj|solutionrelative:main.c||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
     }
@@ -19,12 +23,24 @@
             {
               "$type": "Document",
               "DocumentIndex": 0,
+              "Title": "winprocmon.rc - VS_VERSION_INFO - Version",
+              "DocumentMoniker": "D:\\code\\vs2022\\winprocmon\\winprocmon.rc",
+              "RelativeDocumentMoniker": "winprocmon.rc",
+              "ToolTip": "D:\\code\\vs2022\\winprocmon\\winprocmon.rc - VS_VERSION_INFO - Version",
+              "RelativeToolTip": "winprocmon.rc - VS_VERSION_INFO - Version",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001005|",
+              "WhenOpened": "2024-11-07T09:16:14.616Z",
+              "EditorCaption": " - VS_VERSION_INFO - Version"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
               "Title": "main.c",
               "DocumentMoniker": "D:\\code\\vs2022\\winprocmon\\main.c",
               "RelativeDocumentMoniker": "main.c",
               "ToolTip": "D:\\code\\vs2022\\winprocmon\\main.c",
               "RelativeToolTip": "main.c",
-              "ViewState": "AQIAAFwAAAAAAAAAAAAAwGkAAABAAAAA",
+              "ViewState": "AQIAAAAAAAAAAAAAAAAAAHEAAAAAAAAA",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000423|",
               "WhenOpened": "2024-11-04T06:18:32.36Z",
               "EditorCaption": ""

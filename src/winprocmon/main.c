@@ -17,6 +17,9 @@
 #include <TlHelp32.h>
 #include <wbemidl.h>
 
+#define DEBUG_ENABLE true
+#define DLV 1024
+
 #define WINPROCMON_ERROR_INVALID_COMMAND "invalid command"
 #define WINPROCMON_ERROR_INVALID_FILE_PATH "invalid file path"
 #define WINPROCMON_ERROR_INVALID_PID "invalid process id"
@@ -25,6 +28,7 @@
 #define WINPROCMON_ERROR_OPEN_FILE "fail to open file"
 #define WINPROCMON_ERROR_CONFLICT_SINGLE_COMMAND "command cannot be used mixedly"
 #define WINPROCMON_ERROR_CONFLICT_PID_AND_TOP_NUMBER "pid conflict with top number"
+#define WINPROCMON_ERROR_MONITOR_TARGET_PROCESS "fail to monitor specified process "
 
 struct STRUCTPROCESSMSG {
 
@@ -37,6 +41,12 @@ unsigned long g_pid, g_time, g_top_number;
 char* g_file;
 FILE* g_file_ptr;
 
+void PrintDebugMsg(const char* msg_in, int errorcode_in) {
+    if (DEBUG_ENABLE) {
+        printf("%s %d\n", msg_in, errorcode_in);
+    }
+}
+
 int CompareByWorkingSet(const void* lh, const void* rh) {
     struct STRUCTPROCESSMSG lh_t = *(struct STRUCTPROCESSMSG*)lh;
     struct STRUCTPROCESSMSG rh_t = *(struct STRUCTPROCESSMSG*)rh;
@@ -44,6 +54,10 @@ int CompareByWorkingSet(const void* lh, const void* rh) {
 }
 
 int EnumAllProcess(int in_pid) {
+    bool l_target_process = false;
+    if (in_pid > 4) {
+        l_target_process = true;
+    }
     // get snap of all process
     HANDLE hSnapshort = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (hSnapshort == INVALID_HANDLE_VALUE)
@@ -61,9 +75,7 @@ int EnumAllProcess(int in_pid) {
 
     while (bRet)
     {
-        HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION |
-            PROCESS_VM_READ,
-            FALSE, stcProcessInfo.th32ProcessID);
+        HANDLE hProcess = OpenProcess(PROCESS_SUSPEND_RESUME | PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SET_LIMITED_INFORMATION, FALSE, stcProcessInfo.th32ProcessID);
         if (NULL != hProcess) {
             if (GetProcessMemoryInfo(hProcess, &(g_process_list[l_process_cnt].s_pmc), sizeof(g_process_list[l_process_cnt].s_pmc)))
             {
@@ -77,7 +89,9 @@ int EnumAllProcess(int in_pid) {
                 }
                 ++l_process_cnt;
             }
-        }
+        } else {
+                //printf("pid:%d,error code:%d, name:%ls\n", stcProcessInfo.th32ProcessID,  GetLastError(), stcProcessInfo.szExeFile);
+            }
 
         if (NULL != hProcess) {
             CloseHandle(hProcess);
@@ -85,6 +99,10 @@ int EnumAllProcess(int in_pid) {
         bRet = Process32Next(hSnapshort, &stcProcessInfo);
     }
     CloseHandle(hSnapshort);
+    if (l_target_process) {
+
+        return 0;
+    }
     return l_process_cnt;
 }
 
@@ -124,96 +142,30 @@ void PrintCurrentTime() {
     }
 }
 
-void PrintProcessMemoryMonitorMsg() {
-    PrintCurrentTime();
-}
+BOOL PromotePrivileges(DWORD dwPid) {
+    HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, dwPid);
+    if (hProcess == NULL) {
+        return FALSE;
+    }
 
-void PromotePrivileges1() {
+    // get current process token
     HANDLE hToken;
-    LUID DebugNameValue;
-    TOKEN_PRIVILEGES Privileges;
-    DWORD dwRet;
+    if (!OpenProcessToken(hProcess, TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken)) {
+        CloseHandle(hProcess);
+        return FALSE;
+    }
 
-    if(!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken)) {
-        printf("PromotePrivileges1:OpenProcessToken error code:%d\n", GetLastError());
-    }
-    LookupPrivilegeValue(NULL, "SeDebugPrivilege", &DebugNameValue);
-    Privileges.PrivilegeCount = 1;
-    Privileges.Privileges[0].Luid = DebugNameValue;
-    Privileges.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
-    if (!AdjustTokenPrivileges(hToken, FALSE, &Privileges, sizeof(Privileges), NULL, &dwRet)) {
-        printf("PromotePrivileges1:AdjustTokenPrivileges error code:%d\n", GetLastError());
-    }
+    // promote PromotePrivileges
+    TOKEN_PRIVILEGES tp;
+    LookupPrivilegeValue(NULL, SE_DEBUG_NAME, &tp.Privileges[0].Luid);
+    tp.PrivilegeCount = 1;
+    tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+    AdjustTokenPrivileges(hToken, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), NULL, NULL);
+
     CloseHandle(hToken);
-}
+    CloseHandle(hProcess);
 
-
-int PromotePrivileges() {
-    // Get the Token 
-    HANDLE hToken = NULL;
-    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken)) {
-        return -1;
-    }
-
-    DWORD dwLen;
-    bool bRes;
-
-    // obtain dwLen
-    bRes = GetTokenInformation(
-        hToken,
-        TokenPrivileges,
-        NULL,
-        0,
-        &dwLen
-    );
-
-    BYTE *pBuffer = malloc(dwLen * sizeof(BYTE));
-    if (NULL == pBuffer)
-    {
-        CloseHandle(hToken);
-        return WBEM_E_OUT_OF_MEMORY;
-    }
-
-    bRes = GetTokenInformation(
-        hToken,
-        TokenPrivileges,
-        pBuffer,
-        dwLen,
-        &dwLen
-    );
-
-    if (!bRes)
-    {
-        CloseHandle(hToken);
-        free(pBuffer);
-        pBuffer = NULL;
-        return WBEM_E_ACCESS_DENIED;
-    }
-
-    // Iterate through all the privileges and enable them all
-    // ====================================================== 
-    TOKEN_PRIVILEGES* pPrivs = (TOKEN_PRIVILEGES*)pBuffer;
-    for (DWORD i = 0; i < pPrivs->PrivilegeCount; i++)
-    {
-        pPrivs->Privileges[i].Attributes |= SE_PRIVILEGE_ENABLED;
-    }
-    // Store the information back in the token
-    // ========================================= 
-    bRes = AdjustTokenPrivileges(
-        hToken,
-        FALSE,
-        pPrivs,
-        0, NULL, NULL
-    );
-
-    free(pBuffer);
-    pBuffer = NULL;
-    CloseHandle(hToken);
-
-    if (!bRes)
-        return WBEM_E_ACCESS_DENIED;
-    else
-        return WBEM_S_NO_ERROR;
+    return TRUE;
 }
 
 void StrToLower(const char* in_str, char* out_str, int length) {
@@ -256,12 +208,17 @@ void ProcessMonitor() {
     while (true) {
         int process_cnt = EnumAllProcess(g_pid);
         qsort(g_process_list, process_cnt, sizeof(g_process_list[0]), CompareByWorkingSet);
-        PrintCurrentTime();
-        printf("           PID        WorkingSet          PageFile    ProcessName\n");
+        
         if (g_file_ptr) {
             fprintf(g_file_ptr, "           PID        WorkingSet          PageFile    ProcessName\n");
         }
         process_cnt = min(process_cnt, g_top_number);
+        if (process_cnt == 0) {
+            printf("%s:%d", WINPROCMON_ERROR_MONITOR_TARGET_PROCESS, g_pid);
+            return;
+        }
+        PrintCurrentTime();
+        printf("           PID        WorkingSet          PageFile    ProcessName\n");
         for (unsigned long i = 0; i < process_cnt; ++i) {
             printf("%14lu    %14lu    %14lu    %ls\n", g_process_list[i].s_pe.th32ProcessID, g_process_list[i].s_pmc.WorkingSetSize, g_process_list[i].s_pmc.PagefileUsage, g_process_list[i].s_pe.szExeFile);
             if (g_file_ptr) {
@@ -271,6 +228,40 @@ void ProcessMonitor() {
         printf("\n");
         Sleep(g_time * 1000);
     };
+
+}
+
+void PrintSystemMemoryInfo()
+{
+    MEMORYSTATUSEX mem_stat;
+    ZeroMemory(&mem_stat, sizeof(mem_stat));
+    mem_stat.dwLength = sizeof(mem_stat);//必须执行这一步
+    GlobalMemoryStatusEx(&mem_stat); //取得内存状态
+    printf("内存利用率        %u\%\t\n", mem_stat.dwMemoryLoad);
+    printf("物理内存：        %uKB\t\n", mem_stat.ullTotalPhys / DLV);
+    printf("可用物理内存：      %uKB\t\n", mem_stat.ullAvailPhys / DLV);
+    printf("总共页文件大小：    %uKB\t\n", mem_stat.ullTotalPageFile / DLV);
+    printf("空闲页文件大小：    %uKB\n", mem_stat.ullAvailPageFile / DLV);
+    printf("虚拟内存大小：    %uKB\t\n", mem_stat.ullTotalVirtual / DLV);
+    printf("空闲虚拟内存大小：%uKB\t\n", mem_stat.ullAvailVirtual / DLV);
+    printf("空闲拓展内存大小：%uKB\t\n", mem_stat.ullAvailExtendedVirtual / DLV);
+
+    PERFORMANCE_INFORMATION pi;
+    GetPerformanceInfo(&pi, sizeof(pi));
+    DWORDLONG page_size = pi.PageSize;
+    printf("Commit Total           %uKB\t\n", pi.CommitTotal * page_size / DLV);
+    printf("Commit Limit           %uKB\t\n", pi.CommitLimit * page_size / DLV);
+    printf("Commit Peak            %uKB\t\n", pi.CommitPeak * page_size / DLV);
+    printf("Physical Memory        %uKB\t\n", pi.PhysicalTotal * page_size / DLV);
+    printf("Physical Memory Avaliable   %uKB\n", pi.PhysicalAvailable * page_size / DLV);
+    printf("System Cache           %uKB\t\n", page_size * pi.SystemCache / DLV);
+    printf("Kerbel Total           %uKB\t\n", pi.KernelTotal * page_size / DLV);
+    printf("Kernel Paged           %uKB\t\n", pi.KernelPaged * page_size / DLV);
+    printf("Kernel Nonpaged        %uKB\t\n", pi.KernelNonpaged * page_size / DLV);
+    printf("Page Size              %uKB\t\n", pi.PageSize / DLV);
+    printf("Handle Count           %u\t\n", pi.HandleCount);
+    printf("Process Count          %u\t\n", pi.ProcessCount);
+    printf("Thread Count           %u\t\n", pi.ThreadCount);
 
 }
 
@@ -386,10 +377,12 @@ void MainLoop(int argc, char* argv[]) {
 }
 
 int main(int argc, char* argv[]) {
+
     #ifdef _WINDOWS
         _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF;
     #endif
-    PromotePrivileges1();
+    
+    PromotePrivileges(GetCurrentProcessId());
     MainLoop(argc, argv);
     if (g_file_ptr) {
         fclose(g_file_ptr);
