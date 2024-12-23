@@ -10,6 +10,7 @@
 #include <stdbool.h>
 #include <io.h>
 #include <string.h>
+#include <locale.h>
 
 #include <windows.h>
 #include <psapi.h>
@@ -41,6 +42,9 @@ unsigned long g_pid, g_time, g_top_number;
 char* g_file;
 FILE* g_file_ptr;
 
+
+void PrintSystemMemoryInfo();
+
 void PrintDebugMsg(const char* msg_in, int errorcode_in) {
     if (DEBUG_ENABLE) {
         printf("%s %d\n", msg_in, errorcode_in);
@@ -55,7 +59,7 @@ int CompareByWorkingSet(const void* lh, const void* rh) {
 
 int EnumAllProcess(int in_pid) {
     bool l_target_process = false;
-    if (in_pid > 4) {
+    if (in_pid > -1) {
         l_target_process = true;
     }
     // get snap of all process
@@ -75,7 +79,8 @@ int EnumAllProcess(int in_pid) {
 
     while (bRet)
     {
-        HANDLE hProcess = OpenProcess(PROCESS_SUSPEND_RESUME | PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SET_LIMITED_INFORMATION, FALSE, stcProcessInfo.th32ProcessID);
+        //PROCESS_SUSPEND_RESUME | PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SET_LIMITED_INFORMATION
+        HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, stcProcessInfo.th32ProcessID);
         if (NULL != hProcess) {
             if (GetProcessMemoryInfo(hProcess, &(g_process_list[l_process_cnt].s_pmc), sizeof(g_process_list[l_process_cnt].s_pmc)))
             {
@@ -120,7 +125,7 @@ void PrintHelpMsg() {
     printf("-f, --file     Save process memory info to specified file.\n");
     printf("-h, --help     Get help for commamds.\n");
     printf("-n, --number   Number of top process need saving.\n");
-    printf("-p, --pid      Pid of specified process need saving.\n");
+    printf("-p, --pid      Pid of specified process need saving(pid must bigger than 3).\n");
     printf("-t, --time     Time(seconds) between two check.\n");
     printf("-v, --version  Show version number and quit.\n");
     printf("\n");
@@ -209,23 +214,31 @@ void ProcessMonitor() {
         int process_cnt = EnumAllProcess(g_pid);
         qsort(g_process_list, process_cnt, sizeof(g_process_list[0]), CompareByWorkingSet);
         
-        if (g_file_ptr) {
-            fprintf(g_file_ptr, "           PID        WorkingSet          PageFile    ProcessName\n");
-        }
+
         process_cnt = min(process_cnt, g_top_number);
         if (process_cnt == 0) {
             printf("%s:%d", WINPROCMON_ERROR_MONITOR_TARGET_PROCESS, g_pid);
             return;
         }
         PrintCurrentTime();
-        printf("           PID        WorkingSet          PageFile    ProcessName\n");
+        PrintSystemMemoryInfo();
+        printf("           PID     WorkingSet(B)       PageFile(B)    ProcessName\n");
+        if (g_file_ptr) {
+            fprintf(g_file_ptr, "           PID        WorkingSet          PageFile    ProcessName\n");
+            fflush(g_file_ptr);
+        }
         for (unsigned long i = 0; i < process_cnt; ++i) {
-            printf("%14lu    %14lu    %14lu    %ls\n", g_process_list[i].s_pe.th32ProcessID, g_process_list[i].s_pmc.WorkingSetSize, g_process_list[i].s_pmc.PagefileUsage, g_process_list[i].s_pe.szExeFile);
+            printf("%14lu    %14lu    %14lu    %s\n", g_process_list[i].s_pe.th32ProcessID, g_process_list[i].s_pmc.WorkingSetSize, g_process_list[i].s_pmc.PagefileUsage, g_process_list[i].s_pe.szExeFile);
             if (g_file_ptr) {
-                fprintf(g_file_ptr, "%14lu    %14lu    %14lu    %ls\n", g_process_list[i].s_pe.th32ProcessID, g_process_list[i].s_pmc.WorkingSetSize, g_process_list[i].s_pmc.PagefileUsage, g_process_list[i].s_pe.szExeFile);
+                fprintf(g_file_ptr, "%14lu    %14lu    %14lu    %s\n", g_process_list[i].s_pe.th32ProcessID, g_process_list[i].s_pmc.WorkingSetSize, g_process_list[i].s_pmc.PagefileUsage, g_process_list[i].s_pe.szExeFile);
+                fflush(g_file_ptr);
             }
         }
         printf("\n");
+        if (g_file_ptr) {
+            fprintf(g_file_ptr, "\n");
+            fflush(g_file_ptr);
+        }
         Sleep(g_time * 1000);
     };
 
@@ -233,7 +246,7 @@ void ProcessMonitor() {
 
 void PrintSystemMemoryInfo()
 {
-    MEMORYSTATUSEX mem_stat;
+    /*MEMORYSTATUSEX mem_stat;
     ZeroMemory(&mem_stat, sizeof(mem_stat));
     mem_stat.dwLength = sizeof(mem_stat);//必须执行这一步
     GlobalMemoryStatusEx(&mem_stat); //取得内存状态
@@ -244,24 +257,39 @@ void PrintSystemMemoryInfo()
     printf("空闲页文件大小：    %uKB\n", mem_stat.ullAvailPageFile / DLV);
     printf("虚拟内存大小：    %uKB\t\n", mem_stat.ullTotalVirtual / DLV);
     printf("空闲虚拟内存大小：%uKB\t\n", mem_stat.ullAvailVirtual / DLV);
-    printf("空闲拓展内存大小：%uKB\t\n", mem_stat.ullAvailExtendedVirtual / DLV);
+    printf("空闲拓展内存大小：%uKB\t\n", mem_stat.ullAvailExtendedVirtual / DLV);*/
 
     PERFORMANCE_INFORMATION pi;
     GetPerformanceInfo(&pi, sizeof(pi));
     DWORDLONG page_size = pi.PageSize;
-    printf("Commit Total           %uKB\t\n", pi.CommitTotal * page_size / DLV);
-    printf("Commit Limit           %uKB\t\n", pi.CommitLimit * page_size / DLV);
-    printf("Commit Peak            %uKB\t\n", pi.CommitPeak * page_size / DLV);
-    printf("Physical Memory        %uKB\t\n", pi.PhysicalTotal * page_size / DLV);
-    printf("Physical Memory Avaliable   %uKB\n", pi.PhysicalAvailable * page_size / DLV);
-    printf("System Cache           %uKB\t\n", page_size * pi.SystemCache / DLV);
-    printf("Kerbel Total           %uKB\t\n", pi.KernelTotal * page_size / DLV);
-    printf("Kernel Paged           %uKB\t\n", pi.KernelPaged * page_size / DLV);
-    printf("Kernel Nonpaged        %uKB\t\n", pi.KernelNonpaged * page_size / DLV);
-    printf("Page Size              %uKB\t\n", pi.PageSize / DLV);
-    printf("Handle Count           %u\t\n", pi.HandleCount);
-    printf("Process Count          %u\t\n", pi.ProcessCount);
-    printf("Thread Count           %u\t\n", pi.ThreadCount);
+    printf("CommitTotal        :%12uKB ", pi.CommitTotal * page_size / DLV);
+    printf("CommitLimit        :%12uKB ", pi.CommitLimit * page_size / DLV);
+    printf("CommitPeak         :%12uKB\n", pi.CommitPeak * page_size / DLV);
+    printf("PhysicalMemoryTotal:%12uKB ", pi.PhysicalTotal * page_size / DLV);
+    printf("PhysicalMemoryAval :%12uKB ", pi.PhysicalAvailable * page_size / DLV);
+    printf("SystemCache        :%12uKB\n", page_size * pi.SystemCache / DLV);
+    printf("KernelTotal        :%12uKB ", pi.KernelTotal * page_size / DLV);
+    printf("KernelPaged        :%12uKB ", pi.KernelPaged * page_size / DLV);
+    printf("KernelNonpaged     :%12uKB\n", pi.KernelNonpaged * page_size / DLV);
+    //printf("Page Size              %uKB\t\n", pi.PageSize / DLV);
+    printf("HandleCount        :%12u   ", pi.HandleCount);
+    printf("ProcessCount       :%12u   ", pi.ProcessCount);
+    printf("ThreadCount        :%12u\n", pi.ThreadCount);
+    if (g_file_ptr) {
+        fprintf(g_file_ptr, "CommitTotal        :%12uKB ", pi.CommitTotal * page_size / DLV);
+        fprintf(g_file_ptr, "CommitLimit        :%12uKB ", pi.CommitLimit * page_size / DLV);
+        fprintf(g_file_ptr, "CommitPeak         :%12uKB\n", pi.CommitPeak * page_size / DLV);
+        fprintf(g_file_ptr, "PhysicalMemoryTotal:%12uKB ", pi.PhysicalTotal * page_size / DLV);
+        fprintf(g_file_ptr, "PhysicalMemoryAval :%12uKB ", pi.PhysicalAvailable * page_size / DLV);
+        fprintf(g_file_ptr, "SystemCache        :%12uKB\n", page_size * pi.SystemCache / DLV);
+        fprintf(g_file_ptr, "KernelTotal        :%12uKB ", pi.KernelTotal * page_size / DLV);
+        fprintf(g_file_ptr, "KernelPaged        :%12uKB ", pi.KernelPaged * page_size / DLV);
+        fprintf(g_file_ptr, "KernelNonpaged     :%12uKB\n", pi.KernelNonpaged * page_size / DLV);
+        fprintf(g_file_ptr, "HandleCount        :%12u   ", pi.HandleCount);
+        fprintf(g_file_ptr, "ProcessCount       :%12u   ", pi.ProcessCount);
+        fprintf(g_file_ptr, "ThreadCount        :%12u\n", pi.ThreadCount);
+        fflush(g_file_ptr);
+    }
 
 }
 
@@ -307,6 +335,11 @@ void MainLoop(int argc, char* argv[]) {
                 } else {
                     unsigned long l_pid = 0;
                     if (StringToUlong(argv[i + 1], &l_pid)) {
+                        if (l_pid < 4) {
+                            l_cmd_error = true;
+                            l_error_msg = WINPROCMON_ERROR_INVALID_PID;
+                            l_error_cmd = argv[i + 1];
+                        }
                         g_pid = l_pid;
                         l_pid_enable = true;
                     }
@@ -382,10 +415,13 @@ int main(int argc, char* argv[]) {
         _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF;
     #endif
     
+    setlocale(LC_ALL, "");
+
     PromotePrivileges(GetCurrentProcessId());
     MainLoop(argc, argv);
     if (g_file_ptr) {
         fclose(g_file_ptr);
     }
+    //PrintSystemMemoryInfo();
     return 0;
 }
